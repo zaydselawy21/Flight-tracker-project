@@ -1,0 +1,5 @@
+{
+  "name": "Flight tracker Project by Selawy",
+  "description": "An elegant flight tracking application that finds the best flight deals to any destination using AI-powered search. Enter your origin, destination, and dates to discover a curated list of flight options from various airlines.",
+  "requestFramePermissions": []
+}
