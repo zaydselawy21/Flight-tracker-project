@@ -2,6 +2,7 @@ export interface Flight {
   id: string;
   airline: string;
   flightNumber: string;
+  carrierCode: string;
   origin: {
     code: string;
     city: string;
@@ -16,6 +17,7 @@ export interface Flight {
   stops: number;
   price: number;
   bookingUrl: string;
+  departureDate: string;
 }
 
 export interface SearchParams {
@@ -23,6 +25,9 @@ export interface SearchParams {
   destination: string;
   departureDate: string;
   returnDate: string;
+  tripType: 'one-way' | 'round-trip';
+  adults: number;
+  children: number;
 }
 
 export interface GroundingSource {

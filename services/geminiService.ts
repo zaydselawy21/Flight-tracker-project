@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { Flight, SearchParams, GroundingSource } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Define a type for the grounding chunk structure
 interface GroundingChunk {
@@ -13,31 +13,41 @@ interface GroundingChunk {
 
 export const fetchFlights = async (params: SearchParams): Promise<{ flights: Flight[], sources: GroundingSource[] }> => {
   const prompt = `
-    You are a flight search API. Your task is to find and return real, bookable flight options based on the following criteria using your search capabilities.
+    You are a hyper-accurate, flight booking assistant API. Your core directive is to provide authentic, real, and bookable flight options. User trust is your top priority.
+
+    Search Criteria:
+    - Trip Type: ${params.tripType}
     - Origin: ${params.origin}
     - Destination: ${params.destination}
     - Departure Date: ${params.departureDate}
-    - Return Date: ${params.returnDate ? params.returnDate : 'One-way trip'}
+    - Return Date: ${params.tripType === 'round-trip' && params.returnDate ? params.returnDate : 'N/A'}
+    - Passengers: ${params.adults} Adults, ${params.children} Children
 
     Instructions:
-    1.  Use your search tool to find real flight information for the specified route and dates.
-    2.  Generate a list of 5 to 7 flight options.
-    3.  For each flight, provide the airline, flight number, departure/arrival airports and times, total duration, number of stops, and an estimated price in USD.
-    4.  CRITICAL: For each flight, you MUST also provide a 'bookingUrl'. This must be a real, working URL found directly in your search results that corresponds to the specific flight. Do not invent, guess, or fabricate a URL from a template. The link must lead the user to a page where they can see and book the exact flight you have listed. Prioritize the airline's official website, but a direct link to the itinerary on a major booking site like Google Flights is also acceptable if a direct airline link is not found.
-    5.  Ensure the origin and destination cities and codes match the user's request.
-    6.  VERY IMPORTANT: Respond ONLY with a valid JSON array of flight objects. Do not include markdown formatting, any introductory text, titles, or explanations. The entire response must be the JSON data itself.
-    
-    The JSON objects in the array must have the following structure:
+    1.  **Search & Verify:** Use your search tool to find real-time flight information for the specified number of passengers. Every piece of data you return (flight number, times, price, etc.) MUST be verifiable from the search results.
+    2.  **Generate Options:** Produce a list of 5 to 7 distinct flight options. The price must reflect the total for all passengers.
+    3.  **Data Integrity & Formatting:**
+        - Provide accurate flight details: airline, flight number, times, duration, stops, and total price in USD for all passengers.
+        - **\`carrierCode\` is mandatory and MUST be the 2-letter IATA airline code (e.g., "UA" for United, "DL" for Delta).**
+        - **Crucially, you MUST include the 'departureDate' in 'YYYY-MM-DD' format for each flight record.**
+        - **'bookingUrl' MUST be a deep link directly to the booking or checkout page for the exact flight found.** This is the most critical instruction. The user must land on a page where they can see the flight details and begin the booking process.
+        - **DO NOT provide generic homepages** (e.g., 'delta.com'). The URL should contain query parameters reflecting the search, like origin, destination, and dates.
+        - **Verify the link is active.** Do your best to ensure the URL leads to a working page, not a 404 error.
+    4.  **RESPONSE FORMAT:** Your response must be ONLY a valid JSON array of flight objects. Do not add any text, titles, explanations, or markdown formatting like \`\`\`json. Your response should start with '[' and end with ']'.
+
+    Example of a good flight object:
     {
-      "id": "a-unique-identifier",
-      "airline": "Airline Name",
-      "flightNumber": "FL123",
-      "origin": { "code": "SFO", "city": "San Francisco", "time": "08:30" },
-      "destination": { "code": "NRT", "city": "Tokyo", "time": "11:45" },
+      "id": "UA837-20240910-SFO-NRT",
+      "airline": "United Airlines",
+      "flightNumber": "UA837",
+      "carrierCode": "UA",
+      "origin": { "code": "SFO", "city": "San Francisco", "time": "11:05" },
+      "destination": { "code": "NRT", "city": "Tokyo", "time": "14:20" },
       "duration": "11h 15m",
       "stops": 0,
-      "price": 1234.56,
-      "bookingUrl": "https://www.google.com/flights#flt=SFO.NRT.2024-10-26..."
+      "price": 4350.00,
+      "bookingUrl": "https://www.united.com/en/us/fsr/choose-flights?f=SFO&t=NRT&d=2024-09-10&p=3",
+      "departureDate": "2024-09-10"
     }
   `;
 
@@ -57,18 +67,21 @@ export const fetchFlights = async (params: SearchParams): Promise<{ flights: Fli
       .filter((web): web is GroundingSource => !!web?.uri && !!web?.title) ?? [];
 
 
-    const jsonString = response.text.trim();
+    let jsonString = response.text.trim();
     if (!jsonString) {
       console.warn("Gemini API returned an empty string.");
       return { flights: [], sources: [] };
     }
     
-    // Attempt to parse the response as JSON. This is less reliable without a schema, so we need robust error handling.
+    // The model might still return the JSON in a markdown block.
+    const jsonMatch = jsonString.match(/```(json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[2]) {
+        jsonString = jsonMatch[2];
+    }
+    
     let flightData: Flight[];
     try {
-        // Sometimes the model might wrap the JSON in markdown backticks
-        const cleanedJsonString = jsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
-        flightData = JSON.parse(cleanedJsonString);
+        flightData = JSON.parse(jsonString);
     } catch (parseError) {
         console.error("Failed to parse JSON response from Gemini API:", parseError);
         console.error("Raw response text:", jsonString);
